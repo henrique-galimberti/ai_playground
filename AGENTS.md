@@ -28,3 +28,4 @@ ai_playground/
 - **Clean and isolated** – avoid shared dependencies between experiments where possible
 - **Iterate in place** – improvements to an experiment stay in its folder
 - **Update index.html** – when creating a new experiment, add a link to it in the root `index.html` landing page so it appears on GitHub Pages
+- **Never commit or push** – only commit or push changes when the user explicitly asks for it
