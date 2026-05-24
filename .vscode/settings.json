@@ -1,0 +1,7 @@
+{
+  "claudeCode.environmentVariables": [
+    { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:1234" },
+    { "name": "ANTHROPIC_AUTH_TOKEN", "value": "lm-studio" },
+    { "name": "ANTHROPIC_MODEL", "value": "qwen3.6" }
+  ]
+}
