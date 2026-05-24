@@ -6,6 +6,7 @@ A repository for AI experiments. Each experiment lives in its own folder at the 
 
 ```
 ai_playground/
+├── index.html             # Landing page (GitHub Pages)
 ├── AGENTS.md              # This file
 ├── .vscode/               # Editor settings
 ├── <experiment-name>/     # Individual experiment folder
@@ -26,3 +27,4 @@ ai_playground/
 - **Self-documenting** – each folder should have a README explaining what the experiment tests and how to run it
 - **Clean and isolated** – avoid shared dependencies between experiments where possible
 - **Iterate in place** – improvements to an experiment stay in its folder
+- **Update index.html** – when creating a new experiment, add a link to it in the root `index.html` landing page so it appears on GitHub Pages
