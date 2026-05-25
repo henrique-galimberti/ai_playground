@@ -30,3 +30,9 @@ ai_playground/
 - **Update index.html** – when creating a new experiment, add a link to it in the root `index.html` landing page so it appears on GitHub Pages
 - **High quality deliverables** – no shortcuts. Deliver polished, well-crafted work.
 - **Never commit or push** – only commit or push changes when the user explicitly asks for it
+- **Validate with Playwright** – after building a web experiment, test it in the browser:
+  - Serve with `npx --yes serve -p <port>` from the project root
+  - Navigate to the experiment URL and verify it loads and works
+  - Check console messages with `playwright_browser_console_messages` for errors
+  - Take screenshots to visually confirm rendering
+  - Clean up all Playwright artifacts (`.playwright-mcp/`, screenshots) before finishing
