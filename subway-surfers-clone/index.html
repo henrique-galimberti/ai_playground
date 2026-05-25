@@ -29,6 +29,25 @@
   .hud-value { font-size: 28px; font-weight: 700; }
   #coins-display .hud-value { color: #ffd700; }
 
+  #powerups-container {
+    position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; pointer-events: none;
+  }
+  .powerup-indicator {
+    display: none; align-items: center; gap: 6px;
+    background: rgba(0,0,0,0.5); border-radius: 20px;
+    padding: 6px 14px; color: #fff; font-size: 13px; font-weight: 600;
+    backdrop-filter: blur(6px); white-space: nowrap;
+  }
+  .powerup-indicator.active { display: flex; }
+  .powerup-bar {
+    width: 60px; height: 6px; background: rgba(255,255,255,0.2);
+    border-radius: 3px; overflow: hidden;
+  }
+  .powerup-bar-fill {
+    height: 100%; border-radius: 3px; transition: width 0.1s linear;
+  }
+
   #menu-screen, #gameover-screen {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -110,6 +129,25 @@
     </div>
   </div>
 
+  <div id="powerups-container">
+    <div class="powerup-indicator" id="pu-magnet">
+      <span>Magnet</span>
+      <div class="powerup-bar"><div class="powerup-bar-fill" id="pu-magnet-bar" style="background:#ff4444;width:100%"></div></div>
+    </div>
+    <div class="powerup-indicator" id="pu-multiplier">
+      <span>2x</span>
+      <div class="powerup-bar"><div class="powerup-bar-fill" id="pu-multiplier-bar" style="background:#4488ff;width:100%"></div></div>
+    </div>
+    <div class="powerup-indicator" id="pu-jetpack">
+      <span>Jetpack</span>
+      <div class="powerup-bar"><div class="powerup-bar-fill" id="pu-jetpack-bar" style="background:#ff8800;width:100%"></div></div>
+    </div>
+    <div class="powerup-indicator" id="pu-hoverboard">
+      <span>Hoverboard</span>
+      <div class="powerup-bar"><div class="powerup-bar-fill" id="pu-hoverboard-bar" style="background:#44ff88;width:100%"></div></div>
+    </div>
+  </div>
+
   <div id="menu-screen">
     <div class="title">Subway Runner</div>
     <div class="subtitle">Endless Runner</div>
@@ -158,12 +196,21 @@ const PLAYER_HEIGHT = 1.8;
 const JUMP_HEIGHT = 4;
 const JUMP_DURATION = 0.6;
 const ROLL_DURATION = 0.5;
-const BASE_SPEED = 12;
-const MAX_SPEED = 28;
+const BASE_SPEED = 16;
+const MAX_SPEED = 34;
 const SPEED_INCREMENT = 0.003;
 const SPAWN_DISTANCE = 120;
 const DESPAWN_DISTANCE = 20;
 const COIN_RADIUS = 0.35;
+
+// Powerup constants
+const POWERUP_TYPES = {
+  magnet: { color: 0xff4444, duration: 8, radius: 8 },
+  multiplier: { color: 0x4488ff, duration: 10, factor: 2 },
+  jetpack: { color: 0xff8800, duration: 6, height: 6 },
+  hoverboard: { color: 0x44ff88, duration: 7 }
+};
+const POWERUP_SPAWN_CHANCE = 0.25;
 
 // ── State ──
 let scene, camera, renderer, clock;
@@ -172,10 +219,12 @@ let isJumping = false, jumpTime = 0, jumpStartY = 0;
 let isRolling = false, rollTimer = 0;
 let speed = BASE_SPEED, score = 0, coins = 0;
 let gameActive = false;
-let obstacles = [], coinObjects = [], groundTiles = [], buildings = [];
+let obstacles = [], coinObjects = [], powerupObjects = [], groundTiles = [], buildings = [];
 let highScore = parseInt(localStorage.getItem('subwayRunnerHigh') || '0');
-let spawnTimer = 0;
+let spawnTimer = 0, powerupSpawnTimer = 0;
 let mixer, playerMesh;
+let activePowerups = { magnet: 0, multiplier: 0, jetpack: 0, hoverboard: 0 };
+let hoverboardMesh = null;
 
 // ── Init ──
 function init() {
@@ -440,6 +489,35 @@ function spawnObstacle() {
   spawnCoins(lane);
 }
 
+function spawnPowerup() {
+  const types = Object.keys(POWERUP_TYPES);
+  const type = types[Math.floor(Math.random() * types.length)];
+  const config = POWERUP_TYPES[type];
+  const lane = Math.floor(Math.random() * 3);
+
+  // Main body - rounded box
+  const geo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+  const mat = new THREE.MeshStandardMaterial({
+    color: config.color, emissive: config.color, emissiveIntensity: 0.5,
+    metalness: 0.6, roughness: 0.2
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(LANES[lane], 2, -SPAWN_DISTANCE);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // Glow ring
+  const ringGeo = new THREE.TorusGeometry(0.6, 0.06, 8, 24);
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: config.color, emissive: config.color, emissiveIntensity: 0.8
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.copy(mesh.position);
+  scene.add(ring);
+
+  powerupObjects.push({ mesh, ring, lane, type, collected: false });
+}
+
 function spawnCoins(blockedLane) {
   const coinLane = Math.floor(Math.random() * 3);
   if (coinLane === blockedLane && Math.random() > 0.3) return;
@@ -531,8 +609,16 @@ function startGame() {
   // Clear old objects
   obstacles.forEach(o => { if (o.mesh) scene.remove(o.mesh); });
   coinObjects.forEach(c => { if (c.mesh) scene.remove(c.mesh); });
+  powerupObjects.forEach(p => { if (p.mesh) scene.remove(p.mesh); if (p.ring) scene.remove(p.ring); });
   obstacles = [];
   coinObjects = [];
+  powerupObjects = [];
+
+  // Reset powerup states
+  activePowerups = { magnet: 0, multiplier: 0, jetpack: 0, hoverboard: 0 };
+  if (hoverboardMesh) { scene.remove(hoverboardMesh); hoverboardMesh = null; }
+  player.position.y = 0;
+  player.scale.y = 1;
 
   playerLane = 1;
   targetX = LANES[1];
@@ -543,6 +629,7 @@ function startGame() {
   score = 0;
   coins = 0;
   spawnTimer = 0;
+  powerupSpawnTimer = 30;
   gameActive = true;
   updateHUD();
 }
@@ -564,6 +651,47 @@ function gameOver() {
 function updateHUD() {
   document.getElementById('score-value').textContent = Math.floor(score);
   document.getElementById('coins-value').textContent = coins;
+}
+
+function updatePowerupHUD() {
+  for (const type of Object.keys(activePowerups)) {
+    const el = document.getElementById(`pu-${type}`);
+    const bar = document.getElementById(`pu-${type}-bar`);
+    const config = POWERUP_TYPES[type];
+    const remaining = activePowerups[type];
+    if (remaining > 0) {
+      el.classList.add('active');
+      bar.style.width = `${(remaining / config.duration) * 100}%`;
+    } else {
+      el.classList.remove('active');
+      bar.style.width = '0%';
+    }
+  }
+}
+
+function createHoverboard() {
+  if (hoverboardMesh) return;
+  const group = new THREE.Group();
+
+  const deckGeo = new THREE.BoxGeometry(1.2, 0.08, 2);
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0x44ff88, metalness: 0.5, roughness: 0.3 });
+  const deck = new THREE.Mesh(deckGeo, deckMat);
+  group.add(deck);
+
+  const wheelGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.06, 12);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  for (let x of [-0.5, 0.5]) {
+    for (let z of [-0.7, 0.7]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, -0.1, z);
+      group.add(wheel);
+    }
+  }
+
+  group.position.set(player.position.x, 0.15, player.position.z);
+  scene.add(group);
+  hoverboardMesh = group;
 }
 
 // ── Collision ──
@@ -595,16 +723,35 @@ function checkCollisions() {
   // Coins
   for (const coin of coinObjects) {
     if (coin.collected) continue;
-    if (coin.lane !== playerLane) continue;
-    const cz = coin.mesh.position.z;
-    if (pz > cz - 1 && pz < cz + 1) {
-      if (py < 2.5 && py + ph > 0.5) {
-        coin.collected = true;
-        scene.remove(coin.mesh);
-        coins++;
+    const dx = px - coin.mesh.position.x;
+    const dz = pz - coin.mesh.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 1.5) {
+      coin.collected = true;
+      scene.remove(coin.mesh);
+      coins++;
+    }
+  }
+
+  // Powerups
+  for (const pu of powerupObjects) {
+    if (pu.collected) continue;
+    const dx = px - pu.mesh.position.x;
+    const dz = pz - pu.mesh.position.z;
+    const dy = (py + ph / 2) - pu.mesh.position.y;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < 1.5) {
+      pu.collected = true;
+      scene.remove(pu.mesh);
+      scene.remove(pu.ring);
+      activePowerups[pu.type] = POWERUP_TYPES[pu.type].duration;
+      if (pu.type === 'hoverboard') {
+        createHoverboard();
       }
     }
   }
+
+  if (activePowerups.hoverboard > 0) return false;
 
   return false;
 }
@@ -623,7 +770,9 @@ function animate() {
 
   if (gameActive) {
     speed = Math.min(speed + SPEED_INCREMENT, MAX_SPEED);
-    score += speed * dt;
+    let scoreMult = 1;
+    if (activePowerups.multiplier > 0) scoreMult = POWERUP_TYPES.multiplier.factor;
+    score += speed * dt * scoreMult;
 
     // Move player forward (actually move world toward player)
     const moveAmt = speed * dt;
@@ -674,6 +823,66 @@ function animate() {
       }
     }
 
+    // Move powerups
+    for (const pu of powerupObjects) {
+      if (!pu.collected) {
+        pu.mesh.position.z += moveAmt;
+        pu.ring.position.z += moveAmt;
+        pu.mesh.rotation.y += 3 * dt;
+        pu.ring.rotation.x += 2 * dt;
+        pu.ring.rotation.y += 1.5 * dt;
+        // Bob up and down
+        pu.mesh.position.y = 2 + Math.sin(clock.elapsedTime * 4 + pu.mesh.position.z) * 0.3;
+        pu.ring.position.y = pu.mesh.position.y;
+      }
+    }
+
+    // Magnet effect - attract nearby coins
+    if (activePowerups.magnet > 0) {
+      const magnetConfig = POWERUP_TYPES.magnet;
+      for (const coin of coinObjects) {
+        if (coin.collected) continue;
+        const dx = player.position.x - coin.mesh.position.x;
+        const dz = player.position.z - coin.mesh.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < magnetConfig.radius && dist > 0.5) {
+          const force = (1 - dist / magnetConfig.radius) * 15 * dt;
+          coin.mesh.position.x += (dx / dist) * force;
+          coin.mesh.position.z += (dz / dist) * force;
+          coin.mesh.position.y += (player.position.y + 1 - coin.mesh.position.y) * 5 * dt;
+        }
+      }
+    }
+
+    // Jetpack effect
+    if (activePowerups.jetpack > 0) {
+      const targetY = POWERUP_TYPES.jetpack.height;
+      player.position.y += (targetY - player.position.y) * 5 * dt;
+    } else if (player.position.y > 0.1 && !isJumping) {
+      player.position.y = 0;
+    }
+
+    // Update powerup timers
+    for (const type of Object.keys(activePowerups)) {
+      if (activePowerups[type] > 0) {
+        activePowerups[type] -= dt;
+        if (activePowerups[type] < 0) activePowerups[type] = 0;
+      }
+    }
+
+    // Update powerup HUD
+    updatePowerupHUD();
+
+    // Hoverboard follows player
+    if (hoverboardMesh && activePowerups.hoverboard > 0) {
+      hoverboardMesh.position.x += (player.position.x - hoverboardMesh.position.x) * 10 * dt;
+      hoverboardMesh.position.z = player.position.z;
+      hoverboardMesh.position.y = player.position.y + 0.15;
+    } else if (hoverboardMesh) {
+      scene.remove(hoverboardMesh);
+      hoverboardMesh = null;
+    }
+
     // Clean up
     obstacles = obstacles.filter(o => {
       if (o.mesh.position.z > DESPAWN_DISTANCE) {
@@ -689,12 +898,27 @@ function animate() {
       }
       return true;
     });
+    powerupObjects = powerupObjects.filter(p => {
+      if (p.mesh.position.z > DESPAWN_DISTANCE) {
+        scene.remove(p.mesh);
+        scene.remove(p.ring);
+        return false;
+      }
+      return true;
+    });
 
     // Spawn
     spawnTimer -= moveAmt;
     if (spawnTimer <= 0) {
       spawnObstacle();
       spawnTimer = 25 + Math.random() * 20;
+    }
+
+    // Spawn powerups
+    powerupSpawnTimer -= moveAmt;
+    if (powerupSpawnTimer <= 0) {
+      spawnPowerup();
+      powerupSpawnTimer = 60 + Math.random() * 50;
     }
 
     // Move buildings
