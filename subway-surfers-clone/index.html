@@ -229,7 +229,7 @@ let isJumping = false, jumpTime = 0, jumpStartY = 0;
 let isRolling = false, rollTimer = 0;
 let speed = BASE_SPEED, score = 0, coins = 0;
 let gameActive = false;
-let obstacles = [], coinObjects = [], powerupObjects = [], buildings = [], clouds = [], groundDetails = [];
+let obstacles = [], coinObjects = [], powerupObjects = [], buildings = [], clouds = [], groundDetails = [], vegetation = [];
 let highScore = parseInt(localStorage.getItem('subwayRunnerHigh') || '0');
 let spawnTimer = 0, powerupSpawnTimer = 0;
 let activePowerups = { magnet: 0, multiplier: 0, jetpack: 0, hoverboard: 0 };
@@ -439,16 +439,72 @@ function createGround() {
   road.receiveShadow = true;
   scene.add(road);
 
-  // Sidewalks
-  for (let side of [-1, 1]) {
-    const swGeo = new THREE.BoxGeometry(2, 0.2, 300);
-    const swMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.7 });
-    const sw = new THREE.Mesh(swGeo, swMat);
-    sw.position.set(side * (LANE_WIDTH * 1.5 + 2), 0.1, -100);
-    sw.receiveShadow = true;
-    sw.castShadow = true;
-    scene.add(sw);
+  // Left side – grass
+  const grassWidth = 12;
+  const grassGeo = new THREE.BoxGeometry(grassWidth, 0.2, 300);
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x4a8c3f, roughness: 0.95 });
+  const grass = new THREE.Mesh(grassGeo, grassMat);
+  grass.position.set(-LANE_WIDTH * 1.5 - 2 - grassWidth / 2, 0.05, -100);
+  grass.receiveShadow = true;
+  scene.add(grass);
+
+  // Grass texture detail – scattered tufts
+  for (let z = 0; z > -300; z -= 1.5) {
+    for (let x = 0; x < grassWidth; x += 1.5) {
+      if (Math.random() > 0.5) {
+        const tuftGeo = new THREE.ConeGeometry(0.1 + Math.random() * 0.15, 0.2 + Math.random() * 0.2, 4);
+        const tuftMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(0.28 + Math.random() * 0.08, 0.6 + Math.random() * 0.3, 0.25 + Math.random() * 0.15),
+          roughness: 1
+        });
+        const tuft = new THREE.Mesh(tuftGeo, tuftMat);
+        tuft.position.set(
+          -LANE_WIDTH * 1.5 - 2 - 1 - Math.random() * (grassWidth - 2),
+          0.15,
+          z + (Math.random() - 0.5) * 0.8
+        );
+        scene.add(tuft);
+        groundDetails.push(tuft);
+      }
+    }
   }
+
+  // Grass edge border
+  const borderGeo = new THREE.BoxGeometry(0.3, 0.25, 300);
+  const borderMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 });
+  const leftBorder = new THREE.Mesh(borderGeo, borderMat);
+  leftBorder.position.set(-LANE_WIDTH * 1.5 - 0.85, 0.12, -100);
+  leftBorder.receiveShadow = true;
+  leftBorder.castShadow = true;
+  scene.add(leftBorder);
+
+  // Right side – paved walkway
+  const walkWidth = 10;
+  const walkGeo = new THREE.BoxGeometry(walkWidth, 0.2, 300);
+  const walkMat = new THREE.MeshStandardMaterial({ color: 0xb0a89a, roughness: 0.75 });
+  const walkway = new THREE.Mesh(walkGeo, walkMat);
+  walkway.position.set(LANE_WIDTH * 1.5 + 2 + walkWidth / 2, 0.1, -100);
+  walkway.receiveShadow = true;
+  walkway.castShadow = true;
+  scene.add(walkway);
+
+  // Walkway tile lines
+  for (let z = 0; z > -300; z -= 2) {
+    const tileGeo = new THREE.PlaneGeometry(walkWidth, 0.04);
+    const tileMat = new THREE.MeshStandardMaterial({ color: 0x999099, roughness: 0.6 });
+    const tile = new THREE.Mesh(tileGeo, tileMat);
+    tile.rotation.x = -Math.PI / 2;
+    tile.position.set(LANE_WIDTH * 1.5 + 2 + walkWidth / 2, 0.21, z);
+    scene.add(tile);
+    groundDetails.push(tile);
+  }
+
+  // Walkway edge border
+  const rightBorder = new THREE.Mesh(borderGeo, borderMat);
+  rightBorder.position.set(LANE_WIDTH * 1.5 + 0.85, 0.12, -100);
+  rightBorder.receiveShadow = true;
+  rightBorder.castShadow = true;
+  scene.add(rightBorder);
 
   // Lane dividers (dashed)
   for (let lane of [-1.5, 1.5]) {
@@ -575,6 +631,7 @@ function createEnvironment() {
     createBuilding(-true, -i * 10);
     createBuilding(true, -i * 10);
   }
+  createVegetation();
 }
 
 function createBuilding(side, z) {
@@ -666,6 +723,71 @@ function createClouds() {
     clouds.push(group);
   }
 }
+
+// ── Vegetation ──
+function createVegetation() {
+  for (let i = 0; i < 20; i++) {
+    createTree(-12 - Math.random() * 5, -i * 15 - Math.random() * 8);
+    createBush(-10 - Math.random() * 6, -i * 15 - Math.random() * 12);
+  }
+}
+
+function createTree(x, z) {
+  const group = new THREE.Group();
+
+  // Trunk
+  const trunkH = 2 + Math.random() * 2;
+  const trunkGeo = new THREE.CylinderGeometry(0.15, 0.2, trunkH, 8);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Canopy layers
+  const canopyLayers = 2 + Math.floor(Math.random() * 2);
+  const greenShade = Math.random();
+  const canopyColor = new THREE.Color().setHSL(0.25 + greenShade * 0.1, 0.6 + Math.random() * 0.3, 0.25 + Math.random() * 0.15);
+  const canopyMat = new THREE.MeshStandardMaterial({ color: canopyColor, roughness: 0.8 });
+
+  for (let i = 0; i < canopyLayers; i++) {
+    const radius = 1.2 - i * 0.3 + Math.random() * 0.3;
+    const canopyGeo = new THREE.SphereGeometry(radius, 8, 6);
+    const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+    canopy.position.y = trunkH + i * 0.8;
+    canopy.position.x = (Math.random() - 0.5) * 0.3;
+    canopy.position.z = (Math.random() - 0.5) * 0.3;
+    canopy.castShadow = true;
+    group.add(canopy);
+  }
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  vegetation.push(group);
+}
+
+function createBush(x, z) {
+  const group = new THREE.Group();
+  const bushCount = 2 + Math.floor(Math.random() * 3);
+  const greenShade = Math.random();
+  const bushColor = new THREE.Color().setHSL(0.22 + greenShade * 0.12, 0.5 + Math.random() * 0.3, 0.22 + Math.random() * 0.15);
+  const bushMat = new THREE.MeshStandardMaterial({ color: bushColor, roughness: 0.8 });
+
+  for (let i = 0; i < bushCount; i++) {
+    const radius = 0.3 + Math.random() * 0.4;
+    const bushGeo = new THREE.SphereGeometry(radius, 8, 6);
+    const bush = new THREE.Mesh(bushGeo, bushMat);
+    bush.position.set((Math.random() - 0.5) * 0.8, radius * 0.7, (Math.random() - 0.5) * 0.6);
+    bush.scale.y = 0.7;
+    bush.castShadow = true;
+    group.add(bush);
+  }
+
+  group.position.set(x, 0, z);
+  scene.add(group);
+  vegetation.push(group);
+}
+
 
 // ── Obstacles ──
 function spawnObstacle() {
@@ -1300,6 +1422,14 @@ function animate() {
       if (c.position.z > 30) {
         c.position.z -= 230;
         c.position.x = (Math.random() - 0.5) * 80;
+      }
+    }
+
+    // Move vegetation
+    for (const v of vegetation) {
+      v.position.z += moveAmt;
+      if (v.position.z > 30) {
+        v.position.z -= 300;
       }
     }
 
